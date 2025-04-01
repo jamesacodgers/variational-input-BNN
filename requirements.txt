@@ -2,3 +2,5 @@ bayesian-torch
 matplotlib
 pandas
 seaborn
+jupyter
+ipykernel
