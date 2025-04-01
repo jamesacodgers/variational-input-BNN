@@ -1,2 +1,4 @@
 bayesian-torch
 matplotlib
+pandas
+seaborn

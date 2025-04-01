@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from bayesian_torch.layers import LinearReparameterization
 
+import pandas as pd
+from datetime import datetime
+
 # Set random seed for reproducibility
 # torch.manual_seed(42)
 
@@ -160,7 +163,7 @@ def predict(model, x_test, n_samples=500):
 # Visualize the results
 # Visualize the results with density plot and metrics
 # Visualize the results with multiple models
-def plot_results(models, x_train, y_train, x_test, y_test, losses_list, model_names=None, var_dist=None):
+def plot_results(models, x_train, y_train, x_test, y_test, losses_list, model_names=None, var_dist=None, hidden_size="not_given"):
     # Create a figure with 2 subplots, sharing x-axis
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 9), height_ratios=[4, 1], sharex=True)
     plt.subplots_adjust(hspace=0.05)  # Reduce space between subplots
@@ -211,7 +214,7 @@ def plot_results(models, x_train, y_train, x_test, y_test, losses_list, model_na
 
     
     ax1.set_ylabel('y')
-    ax1.set_title('Comparison of BNN Models')
+    ax1.set_title(f'Comparison of BNN Models \n hidden size = {hidden_size}')
     ax1.legend(loc='upper right', fontsize='small')
     ax1.grid(True)
     
@@ -238,7 +241,9 @@ def plot_results(models, x_train, y_train, x_test, y_test, losses_list, model_na
     ax2.legend(loc='upper right', fontsize='small')
     ax2.grid(True)
     
-    plt.show()
+    # plt.show()
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    fig.savefig(f'figs/{hidden_size}_comparison_plot_{timestamp}.png', dpi=300, bbox_inches='tight')
     
     # # Plot loss curves in a separate figure (if provided)
     # if losses_list:
@@ -273,6 +278,48 @@ def calculate_metrics(model, x_test, y_test, n_samples=1000):
     
     return mse, mean_lpd
 
+def save_results_to_csv( model, input_weighted_model, variational_input_weighted_model, 
+                       mse, lpd, iw_mse, iw_lpd, viw_mse, viw_lpd, 
+                       filename='experiment_results.csv'):
+    """
+    Save experiment results to a CSV file.
+    If the file exists, append the new results.
+    """
+    # Create a dictionary with the results
+    results = {
+        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'standard_mse': mse,
+        'standard_lpd': lpd,
+        'input_weighted_mse': iw_mse,
+        'input_weighted_lpd': iw_lpd,
+        'variational_input_weighted_mse': viw_mse,
+        'variational_input_weighted_lpd': viw_lpd,
+        'variational_mean': variational_input_weighted_model.mean.item(),
+        'variational_std': variational_input_weighted_model.log_std.exp().item(),
+        'standard_log_sigma2': model.log_sigma2.item(),
+        'input_weighted_log_sigma2': input_weighted_model.log_sigma2.item(),
+        'variational_log_sigma2': variational_input_weighted_model.log_sigma2.item()
+    }
+    
+    # Convert to DataFrame
+    results_df = pd.DataFrame([results])
+    
+    try:
+        # Try to read existing CSV
+        existing_df = pd.read_csv(filename)
+        # Append new results
+        updated_df = pd.concat([existing_df, results_df], ignore_index=True)
+    except FileNotFoundError:
+        # If file doesn't exist, create new DataFrame
+        updated_df = results_df
+    
+    # Save to CSV
+    updated_df.to_csv(filename, index=False)
+    print(f"Results saved to {filename}")
+
+
+
+
 # Main execution
 # Main execution
 if __name__ == "__main__":
@@ -282,7 +329,7 @@ if __name__ == "__main__":
     # Generate test data (from the same distribution)
     x_test, y_test = generate_data(n_samples=200)
     
-    hidden_size=100
+    hidden_size=1000
     # Create and train the model
     model = BayesianMLP(hidden_size=hidden_size)
     input_weighted_model = InputWeigtedBNN(hidden_size=hidden_size)
@@ -305,4 +352,15 @@ if __name__ == "__main__":
         input_weighted_model,
         variational_input_weighted_model
         ], 
-        x_train, y_train, x_test, y_test, losses, var_dist=variational_input_weighted_model.get_variational_distribution())
+        x_train, y_train, x_test, y_test, losses, var_dist=variational_input_weighted_model.get_variational_distribution(), hidden_size=hidden_size)
+    
+
+        # After calculating metrics and before plotting, add:
+    save_results_to_csv(
+        model, 
+        input_weighted_model, 
+        variational_input_weighted_model,
+        mse, lpd, 
+        iw_mse, iw_pd, 
+        viw_mse, viw_pd, filename=f"experiment_results_{hidden_size}.csv"
+    )
