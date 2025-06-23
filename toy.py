@@ -93,9 +93,28 @@ class InputWeigtedBNN(BayesianMLP):
 
     def get_weighted_log_likelihood(self, x_train, y_train):
         log_likelihoods = self.get_normal_log_likelihood(x_train, y_train)
-        pdf = torch.distributions.Normal(0,1).log_prob(x_train).exp()
-        return (log_likelihoods*pdf).sum()
+        pdf_x = torch.distributions.Normal(0,1).log_prob(x_train).exp()
+        return (log_likelihoods*pdf_x).sum()
 
+class IncorrectVariationalInputWeigtedBNN(InputWeigtedBNN):
+    def __init__(self, hidden_size=20):
+        super(IncorrectVariationalInputWeigtedBNN, self).__init__(hidden_size)
+
+        self.mean = nn.Parameter(torch.randn(1)/100)
+        self.log_std = nn.Parameter(torch.randn(1)/100)
+
+
+    def get_variational_distribution(self):
+        return torch.distributions.Normal(self.mean, self.log_std.exp())
+
+    def get_weighted_log_likelihood(self, x_train, y_train):
+        log_likelihoods_y = self.get_normal_log_likelihood(x_train, y_train)
+        pdf = self.get_variational_distribution().log_prob(x_train).exp()
+        return (log_likelihoods_y*pdf).sum()
+    
+    def kl_loss(self, num_samples):
+        return super(IncorrectVariationalInputWeigtedBNN,self).kl_loss(num_samples) + num_samples*torch.distributions.kl_divergence(self.get_variational_distribution(), torch.distributions.Normal(0,1))
+    
 class VariationalInputWeigtedBNN(InputWeigtedBNN):
     def __init__(self, hidden_size=20):
         super(VariationalInputWeigtedBNN, self).__init__(hidden_size)
@@ -108,12 +127,25 @@ class VariationalInputWeigtedBNN(InputWeigtedBNN):
         return torch.distributions.Normal(self.mean, self.log_std.exp())
 
     def get_weighted_log_likelihood(self, x_train, y_train):
-        log_likelihoods = self.get_normal_log_likelihood(x_train, y_train)
+        log_likelihoods_y = self.get_normal_log_likelihood(x_train, y_train)
+        log_likelihoods_x = torch.distributions.Normal(0,1).log_prob(x_train)
         pdf = self.get_variational_distribution().log_prob(x_train).exp()
-        return (log_likelihoods*pdf).sum()
+        return (log_likelihoods_y*pdf+ log_likelihoods_x).sum()
     
     def kl_loss(self, num_samples):
         return super(VariationalInputWeigtedBNN,self).kl_loss(num_samples) + num_samples*torch.distributions.kl_divergence(self.get_variational_distribution(), torch.distributions.Normal(0,1))
+    
+class TemperedVaritaionalBNN(BayesianMLP):
+    def __init__(self, hidden_size=20, temperature=0.8):
+        super(TemperedVaritaionalBNN, self).__init__(hidden_size)
+
+        self.mean = nn.Parameter(torch.randn(1)/100)
+        self.log_std = nn.Parameter(torch.randn(1)/100)
+        self.temperature=temperature
+
+    def get_weighted_log_likelihood(self, x_train, y_train):
+        log_likelihoods = self.get_normal_log_likelihood(x_train, y_train)
+        return (log_likelihoods/self.temperature).sum()
     
 
 
@@ -135,7 +167,7 @@ def train_model(model, x_train, y_train, n_epochs=10000, lr=0.001):
         optimizer.step()
         
         # Print progress
-        if (epoch + 1) % 200 == 0:
+        if (epoch + 1) % 2000 == 0:
             # print(f'Epoch {epoch+1}/{n_epochs}, Loss: {loss.item():.4f}, MSE: {mse.item():.4f}, KL: {kl.item():.4f}')
             print(f'Epoch {epoch+1}/{n_epochs}, Loss: {loss.item():.4f}')
     
@@ -261,7 +293,7 @@ def plot_results(models, x_train, y_train, x_test, y_test, losses_list, model_na
     #     plt.show()
 
 # Calculate evaluation metrics
-def calculate_metrics(model, x_test, y_test, n_samples=1000):
+def calculate_metrics(model, x_test, y_test, n_samples=16):
     # Predict mean and std for test points
     mean, std = predict(model, x_test, n_samples)
     
@@ -329,28 +361,42 @@ if __name__ == "__main__":
     # Generate test data (from the same distribution)
     x_test, y_test = generate_data(n_samples=200)
     
-    hidden_size=1000
+    hidden_size=32
     # Create and train the model
     model = BayesianMLP(hidden_size=hidden_size)
     input_weighted_model = InputWeigtedBNN(hidden_size=hidden_size)
+    incorrect_variational_input_weighted_model = IncorrectVariationalInputWeigtedBNN(hidden_size=hidden_size)
     variational_input_weighted_model = VariationalInputWeigtedBNN(hidden_size=hidden_size)
+    tempered_model_8 = TemperedVaritaionalBNN(hidden_size=hidden_size, temperature=0.8)
+    tempered_model_6 = TemperedVaritaionalBNN(hidden_size=hidden_size, temperature=0.6)
     model, losses = train_model(model, x_train, y_train)
     input_weighted_model, losses = train_model(input_weighted_model, x_train, y_train)
+    incorrect_variational_input_weighted_model, losses = train_model(incorrect_variational_input_weighted_model, x_train, y_train)
     variational_input_weighted_model, losses = train_model(variational_input_weighted_model, x_train, y_train)
+    tempered_model_8, losses = train_model(tempered_model_8, x_train, y_train)
+    tempered_model_6, losses = train_model(tempered_model_6, x_train, y_train)
     
     # Calculate metrics on test data
     mse, lpd = calculate_metrics(model, x_test, y_test)
     iw_mse, iw_pd = calculate_metrics(input_weighted_model, x_test, y_test)
-    viw_mse, viw_pd = calculate_metrics(input_weighted_model, x_test, y_test)
-    print(f"Test MSE: {mse:.4f}, {iw_mse:.4f}, {viw_mse:.4f}")
-    print(f"Test Log Predictive Density: {lpd:.4f}, {iw_pd:.4f}, {viw_pd:.4f}")
+    iviw_mse, iviw_pd = calculate_metrics(incorrect_variational_input_weighted_model, x_test, y_test)
+    viw_mse, viw_pd = calculate_metrics(variational_input_weighted_model, x_test, y_test)
+    t8_mse, t8_pd = calculate_metrics(tempered_model_8,x_test,y_test)
+    t6_mse, t6_pd = calculate_metrics(tempered_model_6,x_test,y_test)
+
+
+    print(f"Test MSE: {mse:.4f}, {iw_mse:.4f}, {iviw_mse:.4f},{viw_mse:.4f}, {t8_mse:.4f}, {t6_mse:.4f}")
+    print(f"Test Log Predictive Density: {lpd:.4f}, {iw_pd:.4f}, {iviw_pd},{viw_pd:.4f}, {t8_pd:.4f}, {t6_pd:.4f}")
     print(variational_input_weighted_model.mean, variational_input_weighted_model.log_std.exp())
     print(model.log_sigma2, input_weighted_model.log_sigma2, variational_input_weighted_model.log_sigma2)
     # Plot the results
     plot_results([
         model, 
         input_weighted_model,
-        variational_input_weighted_model
+        incorrect_variational_input_weighted_model,
+        variational_input_weighted_model,
+        tempered_model_8,
+        tempered_model_6
         ], 
         x_train, y_train, x_test, y_test, losses, var_dist=variational_input_weighted_model.get_variational_distribution(), hidden_size=hidden_size)
     

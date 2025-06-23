@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 
-def plot_metrics(csv_file='experiment_results.csv'):
+def plot_metrics(csv_file='experiment_results_1000.csv'):
     # Read the CSV file
     df = pd.read_csv(csv_file)
     
