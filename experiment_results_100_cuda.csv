@@ -1,0 +1,2 @@
+timestamp,standard_mse,standard_lpd,input_weighted_mse,input_weighted_lpd,variational_input_weighted_mse,variational_input_weighted_lpd,variational_mean,variational_std,standard_log_sigma2,input_weighted_log_sigma2,variational_log_sigma2,device
+2025-06-23 11:51:20,0.4523797631263733,-11.005754470825195,0.3409222364425659,-4.047954082489014,0.3870464861392975,-4.594399929046631,-0.022074753418564796,1.0325002670288086,-0.7520312070846558,-0.9426354169845581,-0.8864752650260925,cuda
